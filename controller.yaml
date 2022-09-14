@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: grpcassignmentserver
+  name: controllerandscaler
+spec:
+  restartPolicy: Never
+  containers:
+    - name: controllerandscaler
+      #image: docker.io/mezzeddine/prombbpp:v0   #for test only
+      #image: docker.io/mezzeddine/prometheusbinpackgrpcdelay:v1  #1.5 minute intial delay
+      #image: docker.io/mezzeddine/prometheusbinpackgrpcdelay15:v0  #15 min
+      #image: docker.io/mezzeddine/prometheusbinpackgrpcdelay15arrival:v0  #15 min, only arrivals
+      #image: docker.io/mezzeddine/prometheusbinpackgrpcdelay15reff:v0  #15 min
+      #image: docker.io/mezzeddine/prometheusbinpackgrpcdelay5first:v1  #15 min  (https://github.com/MazenEzzeddine/BinPackAutoscalerWithPrometheus/tree/assignfirst , b394d6e )
+      #image: docker.io/mezzeddine/prometheusbinpackgrpcdelay30reffwarm:v1  #15 min ,
+      #image: docker.io/mezzeddine/prometheusbinpackgrpcdelayassign5:v2
+      #image: docker.io/mezzeddine/prometheusheterass5:v5 #, c9b5569c1af88a3177f6975097ff74aa1dc20f46 (HEAD -> towardshetero, origin/towardshetero, origin/master, master)
+      image: docker.io/mezzeddine/prometheusheterass5:v7 #,3aa525ac1cd54a9f23e3584e14cf71fb8e0a9e93 (HEAD -> towardshetero2, origin/towardshetero2) Refactored working prometheus bin pack                                                   #  https://github.com/MazenEzzeddine/refactoredprometheusbinpack.git
+      ports:
+        - containerPort: 5002
+      env:
+        - name: BOOTSTRAP_SERVERS
+          value: my-cluster-kafka-bootstrap:9092
+        - name: TOPIC
+          value: testtopic1
+        - name: CONSUMER_GROUP
+          value: testgroup1
+        - name: POLL
+          value: "95"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: SLEEP
+          value: "1000"
+        - name: COOLDOWN
+          #value: "15"
+          value: "30"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: assignmentservice
+spec:
+  selector:
+    app: grpcassignmentserver
+  ports:
+    - protocol: TCP
+      port: 5002
+      targetPort: 5002
