@@ -8,7 +8,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-public class AssignmentServer implements Runnable{
+public class AssignmentServer implements Runnable {
 
     private final int port;
     private final Server server;
@@ -59,19 +59,23 @@ public class AssignmentServer implements Runnable{
         }
     }
 
+    static boolean firsttime = true;
 
     public static class AssignmentService extends AssignmentServiceGrpc.AssignmentServiceImplBase {
         @Override
         public void getAssignment(AssignmentRequest request, StreamObserver<AssignmentResponse> responseObserver) {
-           log.info(request.getRequest());
-           //TODO Synchronize access to assignment
-            List<Consumer> assignment = PrometheusHttpClient.assignment;
-            log.info("The assignment is {}", assignment);
-
-            if(assignment.size() == 0) {
+            log.info(request.getRequest());
+            //TODO Synchronize access to assignment
+            List<Consumer> assignment = new ArrayList<>();//PrometheusHttpClient.assignment;
+            //log.info("The assignment is {}", assignment);
 
 
-              /* Consumer c0 = new Consumer("cons100-0",500L,100);
+            //if(assignment.size() == 0) {
+
+            if (firsttime) {
+
+
+             /*  Consumer c0 = new Consumer("cons100-0",500L,100);
                 Consumer c1 = new Consumer("cons200-0",500L,100);
 
                 c0.assignPartition(new Partition(0, 0L,0.0d));
@@ -80,10 +84,11 @@ public class AssignmentServer implements Runnable{
                 c1.assignPartition(new Partition(3, 0L,0.0d));
                 c1.assignPartition(new Partition(4, 0L,0.0d));
                 assignment.add(c0);
-                assignment.add(c1);*/
+                assignment.add(c1);
+                firsttime = false;
+*/
 
-
-                Consumer c0 = new Consumer("0",500L,100);
+             /*   Consumer c0 = new Consumer("0",500L,100);
                 Consumer c1 = new Consumer("1",500L,100);
                 Consumer c2 = new Consumer("2",500L,100);
                 Consumer c3 = new Consumer("3",500L,100);
@@ -100,9 +105,25 @@ public class AssignmentServer implements Runnable{
                 assignment.add(c2);
                 assignment.add(c3);
                 assignment.add(c4);
+*/
 
 
+            }
 
+            // else {
+            //assignment.clear();
+
+
+            //Consumer c0 = new Consumer("cons100-0",500L,100);
+               /* Consumer c1 = new Consumer("cons200-0",500L,100);
+
+                c1.assignPartition(new Partition(0, 0L,0.0d));
+                c1.assignPartition(new Partition(1, 0L,0.0d));
+                c1.assignPartition(new Partition(2, 0L,0.0d));
+                c1.assignPartition(new Partition(3, 0L,0.0d));
+                c1.assignPartition(new Partition(4, 0L,0.0d));
+                //assignment.add(c0);
+                assignment.add(c1);
 
             }
             List<ConsumerGrpc> assignmentReply = new ArrayList<>(assignment.size());
@@ -122,8 +143,9 @@ public class AssignmentServer implements Runnable{
             responseObserver.onCompleted();
             log.info("Sent Assignment to client");
             //PrometheusHttpClient.joiningTime = Duration.between(PrometheusHttpClient.lastScaleTime, Instant.now()).getSeconds();
-            //log.info("joiningTime {}", PrometheusHttpClient.joiningTime);
+            //log.info("joiningTime {}", PrometheusHttpClient.joiningTime);*/
+            // }
         }
-    }
 
+    }
 }

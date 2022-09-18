@@ -23,7 +23,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 
-public class PrometheusHttpClient  implements Runnable{
+public class PrometheusHttpClient  implements Runnable {
 
     private static final Logger log = LogManager.getLogger(PrometheusHttpClient.class);
 
@@ -47,19 +47,30 @@ public class PrometheusHttpClient  implements Runnable{
     static Instant lastCGQuery;
     static Instant startTime;
     static Integer cooldown;
+    static Map<Double, Integer> previousConsumers = new HashMap<>();
 
-    private static  void queryConsumerGroup() throws ExecutionException, InterruptedException {
+    static Map<Double, Integer> currentConsumers =  new HashMap<>();
+
+    final static      List<Double> capacities = Arrays.asList(100.0, 150.0);
+
+
+    private static void queryConsumerGroup() throws ExecutionException, InterruptedException {
         DescribeConsumerGroupsResult describeConsumerGroupsResult =
                 admin.describeConsumerGroups(Collections.singletonList(PrometheusHttpClient.CONSUMER_GROUP));
         KafkaFuture<Map<String, ConsumerGroupDescription>> futureOfDescribeConsumerGroupsResult =
                 describeConsumerGroupsResult.all();
         consumerGroupDescriptionMap = futureOfDescribeConsumerGroupsResult.get();
-         size = consumerGroupDescriptionMap.get(PrometheusHttpClient.CONSUMER_GROUP).members().size();
-        log.info("number of consumers {}", size );
+        size = consumerGroupDescriptionMap.get(PrometheusHttpClient.CONSUMER_GROUP).members().size();
+        log.info("number of consumers {}", size);
     }
 
     private static void readEnvAndCrateAdminClient() {
         log.info("inside read env");
+
+        for (double c : capacities) {
+            currentConsumers.put(c, 0);
+            previousConsumers.put(c,0);
+        }
         sleep = Long.valueOf(System.getenv("SLEEP"));
         topic = System.getenv("TOPIC");
         poll = Long.valueOf(System.getenv("POLL"));
@@ -68,227 +79,8 @@ public class PrometheusHttpClient  implements Runnable{
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, BOOTSTRAP_SERVERS);
         admin = AdminClient.create(props);
+       previousConsumers.put(100.0, 1);
     }
-
-
-    //////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    private static void youMightWanttoScaleUsingBinPack() {
-        log.info("Calling the bin pack scaler");
-        int size = consumerGroupDescriptionMap.get(PrometheusHttpClient.CONSUMER_GROUP).members().size();
-        if(size==0)
-            return;
-        if(Duration.between(startTime, Instant.now()).toSeconds() <= 140 ) {
-
-            log.info("Warm up period period has not elapsed yet not taking decisions");
-            return;
-        }
-        if(Duration.between(lastScaleUpDecision, Instant.now()).toSeconds() >= 15 ) {
-            scaleAsPerBinPack(size);
-        } else {
-            log.info("Scale  cooldown period has not elapsed yet not taking decisions");
-        }
-    }
-
-    public static void scaleAsPerBinPack(int currentsize) {
-        log.info("Currently we have this number of consumers {}", currentsize);
-        int neededsize = binPackAndScale();
-        log.info("We currently need the following consumers (as per the bin pack) {}", neededsize);
-
-        int replicasForscale = neededsize - currentsize;
-        // but is the assignmenet the same
-        if (replicasForscale == 0) {
-            log.info("No need to autoscale");
-          /*  if(!doesTheCurrentAssigmentViolateTheSLA()) {
-                //with the same number of consumers if the current assignment does not violate the SLA
-                return;
-            } else {
-                log.info("We have to enforce rebalance");
-                //TODO skipping it for now. (enforce rebalance)
-            }*/
-        } else if (replicasForscale > 0) {
-            //TODO IF and Else IF can be in the same logic
-            log.info("We have to upscale by {}", replicasForscale);
-            try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
-                k8s.apps().deployments().inNamespace("default").withName("cons1persec").scale(neededsize);
-                log.info("I have Upscaled you should have {}", neededsize);
-            }
-            lastScaleUpDecision = Instant.now();
-            lastScaleDownDecision = Instant.now();
-            lastCGQuery = Instant.now();
-        } else {
-            try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
-                k8s.apps().deployments().inNamespace("default").withName("cons1persec").scale(neededsize);
-                log.info("I have Downscaled you should have {}", neededsize);
-                lastScaleUpDecision = Instant.now();
-                lastScaleDownDecision = Instant.now();
-                lastCGQuery = Instant.now();
-            }
-        }
-    }
-
-
-    private static int binPackAndScale() {
-        log.info("Inside binPackAndScale ");
-        List<Consumer> consumers = new ArrayList<>();
-        int consumerCount = 0;
-        List<Partition> parts = new ArrayList<>(topicpartitions);
-        dynamicAverageMaxConsumptionRate = 95.0;
-
-        long maxLagCapacity;
-        maxLagCapacity = (long) (dynamicAverageMaxConsumptionRate * wsla);
-        consumers.add(new Consumer((String.valueOf(consumerCount)), maxLagCapacity, dynamicAverageMaxConsumptionRate));
-
-        //if a certain partition has a lag higher than R Wmax set its lag to R*Wmax
-        // atention to the window
-        for (Partition partition : parts) {
-            if (partition.getLag() > maxLagCapacity) {
-                log.info("Since partition {} has lag {} higher than consumer capacity times wsla {}" +
-                        " we are truncating its lag", partition.getId(), partition.getLag(), maxLagCapacity);
-                partition.setLag(maxLagCapacity, false);
-            }
-        }
-        //if a certain partition has an arrival rate  higher than R  set its arrival rate  to R
-        //that should not happen in a well partionned topic
-        for (Partition partition : parts) {
-            if (partition.getArrivalRate() > dynamicAverageMaxConsumptionRate) {
-                log.info("Since partition {} has arrival rate {} higher than consumer service rate {}" +
-                                " we are truncating its arrival rate", partition.getId(),
-                        String.format("%.2f",  partition.getArrivalRate()),
-                        String.format("%.2f", dynamicAverageMaxConsumptionRate));
-                partition.setArrivalRate(dynamicAverageMaxConsumptionRate, false);
-            }
-        }
-        //start the bin pack FFD with sort
-        Collections.sort(parts, Collections.reverseOrder());
-        Consumer consumer = null;
-        for (Partition partition : parts) {
-            for (Consumer cons : consumers) {
-                //TODO externalize these choices on the inout to the FFD bin pack
-                // TODO  hey stupid use instatenous lag instead of average lag.
-                // TODO average lag is a decision on past values especially for long DI.
-                if (cons.getRemainingLagCapacity() >=  partition.getLag()  &&
-                        cons.getRemainingArrivalCapacity() >= partition.getArrivalRate()) {
-                    cons.assignPartition(partition);
-                    // we are done with this partition, go to next
-                    break;
-                }
-                //we have iterated over all the consumers hoping to fit that partition, but nope
-                //we shall create a new consumer i.e., scale up
-                if (cons == consumers.get(consumers.size() - 1)) {
-                    consumerCount++;
-                    consumer = new Consumer((String.valueOf(consumerCount)), (long) (dynamicAverageMaxConsumptionRate * wsla),
-                            dynamicAverageMaxConsumptionRate);
-                    consumer.assignPartition(partition);
-                }
-            }
-            if (consumer != null) {
-                consumers.add(consumer);
-                consumer = null;
-            }
-        }
-        log.info(" The BP scaler recommended {}", consumers.size());
-        // copy consumers and partitions for fair assignment
-        List<Consumer> fairconsumers = new ArrayList<>(consumers.size());
-        List<Partition> fairpartitions= new ArrayList<>();
-
-        for (Consumer cons : consumers) {
-            fairconsumers.add(new Consumer(cons.getId(), maxLagCapacity, dynamicAverageMaxConsumptionRate));
-            for(Partition p : cons.getAssignedPartitions()){
-                fairpartitions.add(p);
-            }
-        }
-
-        //sort partitions in descending order for debugging purposes
-        fairpartitions.sort(new Comparator<>() {
-            @Override
-            public int compare(Partition o1, Partition o2) {
-                return Double.compare(o2.getArrivalRate(), o1.getArrivalRate());
-            }
-        });
-
-        //1. list of consumers that will contain the fair assignment
-        //2. list of consumers out of the bin pack.
-        //3. the partition sorted in their decreasing arrival rate.
-        assignPartitionsFairly(fairconsumers,consumers,fairpartitions);
-        for (Consumer cons : fairconsumers) {
-            log.info("fair consumer {} is assigned the following partitions", cons.getId() );
-            for(Partition p : cons.getAssignedPartitions()) {
-                log.info("fair Partition {}", p.getId());
-            }
-        }
-        assignment = fairconsumers;
-        return consumers.size();
-    }
-
-
-
-
-
-
-
-
-
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-    public static void assignPartitionsFairly(
-            final List<Consumer> assignment,
-            final List<Consumer> consumers,
-            final List<Partition> partitionsArrivalRate) {
-        if (consumers.isEmpty()) {
-            return;
-        }// Track total lag assigned to each consumer (for the current topic)
-        final Map<String, Double> consumerTotalArrivalRate = new HashMap<>(consumers.size());
-        final Map<String, Integer> consumerTotalPartitions = new HashMap<>(consumers.size());
-        final Map<String, Double> consumerAllowableArrivalRate = new HashMap<>(consumers.size());
-        for (Consumer cons : consumers) {
-            consumerTotalArrivalRate.put(cons.getId(), 0.0);
-            consumerAllowableArrivalRate.put(cons.getId(), 95.0);
-            consumerTotalPartitions.put(cons.getId(), 0);
-
-        }
-
-        // might want to remove, the partitions are sorted anyway.
-        //First fit decreasing
-        partitionsArrivalRate.sort((p1, p2) -> {
-            // If lag is equal, lowest partition id first
-            if (p1.getArrivalRate() == p2.getArrivalRate()) {
-                return Integer.compare(p1.getId(), p2.getId());
-            }
-            // Highest arrival rate first
-            return Double.compare(p2.getArrivalRate(), p1.getArrivalRate());
-        });
-        for (Partition partition : partitionsArrivalRate) {
-            // Assign to the consumer with least number of partitions, then smallest total lag, then smallest id arrival rate
-            // returns the consumer with lowest assigned partitions, if all assigned partitions equal returns the min total arrival rate
-            final String memberId = Collections
-                    .min(consumerTotalArrivalRate.entrySet(), (c1, c2) ->
-                            Double.compare(c1.getValue(), c2.getValue())!=0?
-                            Double.compare(c1.getValue(), c2.getValue()): c1.getKey().compareTo(c2.getKey())).getKey();
-
-            int memberIndex;
-            for( memberIndex = 0; memberIndex<consumers.size(); memberIndex++) {
-                if(assignment.get(memberIndex).getId().equals(memberId)){
-                    break;
-                }
-            }
-
-            assignment.get(memberIndex).assignPartition(partition);
-            consumerTotalArrivalRate.put(memberId, consumerTotalArrivalRate.getOrDefault(memberId, 0.0) + partition.getArrivalRate());
-            consumerTotalPartitions.put(memberId, consumerTotalPartitions.getOrDefault(memberId, 0) + 1);
-            log.info(
-                    "Assigned partition {} to consumer {}.  partition_arrival_rate={}, consumer_current_total_arrival_rate{} ",
-                    partition.getId(),
-                    memberId ,
-                    String.format("%.2f", partition.getArrivalRate()) ,
-                    consumerTotalArrivalRate.get(memberId));
-        }
-    }
-
-
-
 
 
 
@@ -298,14 +90,14 @@ public class PrometheusHttpClient  implements Runnable{
         //{"status":"success","data":{"resultType":"vector","result":[{"metric":{"topic":"testtopic1"},"value":[1659006264.066,"144.05454545454546"]}]}}
         //log.info(json);
         JSONObject jsonObject = JSONObject.parseObject(json);
-        JSONObject j2 = (JSONObject)jsonObject.get("data");
+        JSONObject j2 = (JSONObject) jsonObject.get("data");
         JSONArray inter = j2.getJSONArray("result");
         JSONObject jobj = (JSONObject) inter.get(0);
         JSONArray jreq = jobj.getJSONArray("value");
         ///String partition = jobjpartition.getString("partition");
         /*log.info("the partition is {}", p);
         log.info("partition arrival rate: {}", Double.parseDouble( jreq.getString(1)));*/
-        return Double.parseDouble( jreq.getString(1));
+        return Double.parseDouble(jreq.getString(1));
     }
 
 
@@ -314,20 +106,14 @@ public class PrometheusHttpClient  implements Runnable{
         //{"status":"success","data":{"resultType":"vector","result":[{"metric":{"topic":"testtopic1"},"value":[1659006264.066,"144.05454545454546"]}]}}
         //log.info(json);
         JSONObject jsonObject = JSONObject.parseObject(json);
-        JSONObject j2 = (JSONObject)jsonObject.get("data");
+        JSONObject j2 = (JSONObject) jsonObject.get("data");
         JSONArray inter = j2.getJSONArray("result");
         JSONObject jobj = (JSONObject) inter.get(0);
         JSONArray jreq = jobj.getJSONArray("value");
        /* log.info("the partition is {}", p);
         log.info("partition lag  {}",  Double.parseDouble( jreq.getString(1)));*/
-        return Double.parseDouble( jreq.getString(1));
+        return Double.parseDouble(jreq.getString(1));
     }
-
-
-
-
-
-
 
 
     @Override
@@ -335,22 +121,22 @@ public class PrometheusHttpClient  implements Runnable{
         readEnvAndCrateAdminClient();
         lastUpScaleDecision = Instant.now();
         lastDownScaleDecision = Instant.now();
-        lastScaleUpDecision=  Instant.now();
+        lastScaleUpDecision = Instant.now();
         lastScaleDownDecision = Instant.now();
         startTime = Instant.now();
         log.info("Sleeping for 1.5 minutes to warmup");
         HttpClient client = HttpClient.newHttpClient();
         String all3 = "http://prometheus-operated:9090/api/v1/query?" +
                 "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,namespace=%22default%22%7D%5B1m%5D))%20by%20(topic)";
-        String p0 =   "http://prometheus-operated:9090/api/v1/query?" +
+        String p0 = "http://prometheus-operated:9090/api/v1/query?" +
                 "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,partition=%220%22,namespace=%22default%22%7D%5B1m%5D))";
-        String p1 =   "http://prometheus-operated:9090/api/v1/query?" +
+        String p1 = "http://prometheus-operated:9090/api/v1/query?" +
                 "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,partition=%221%22,namespace=%22default%22%7D%5B1m%5D))";
-        String p2 =   "http://prometheus-operated:9090/api/v1/query?" +
+        String p2 = "http://prometheus-operated:9090/api/v1/query?" +
                 "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,partition=%222%22,namespace=%22default%22%7D%5B1m%5D))";
-        String p3 =   "http://prometheus-operated:9090/api/v1/query?" +
+        String p3 = "http://prometheus-operated:9090/api/v1/query?" +
                 "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,partition=%223%22,namespace=%22default%22%7D%5B1m%5D))";
-        String p4 =   "http://prometheus-operated:9090/api/v1/query?" +
+        String p4 = "http://prometheus-operated:9090/api/v1/query?" +
                 "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,partition=%224%22,namespace=%22default%22%7D%5B1m%5D))";
        /* String p5 =   "http://prometheus-operated:9090/api/v1/query?" +
                 "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic2%22,partition=%225%22,namespace=%22default%22%7D%5B1m%5D))";
@@ -399,7 +185,7 @@ public class PrometheusHttpClient  implements Runnable{
                 "kafka_consumergroup_lag%7Bconsumergroup=%22testgroup1%22,topic=%22testtopic2%22,partition=%2211%22,namespace=%22default%22%7D";*/
 
 
-        List<URI> partitions= new ArrayList<>();
+        List<URI> partitions = new ArrayList<>();
         try {
             partitions = Arrays.asList(
                     new URI(p0),
@@ -418,7 +204,7 @@ public class PrometheusHttpClient  implements Runnable{
         } catch (URISyntaxException e) {
             e.printStackTrace();
         }
-        List<URI> partitionslag= new ArrayList<>();
+        List<URI> partitionslag = new ArrayList<>();
         try {
             partitionslag = Arrays.asList(
                     new URI(p0lag),
@@ -439,12 +225,12 @@ public class PrometheusHttpClient  implements Runnable{
         }
 
 
-        for (int i = 0; i<=4; i++) {
+        for (int i = 0; i <= 4; i++) {
             topicpartitions.add(new Partition(i, 0, 0));
         }
-       // log.info("created the 5 partitions");
+        // log.info("created the 5 partitions");
 
-        while(true) {
+        while (true) {
             Instant start = Instant.now();
 
             List<CompletableFuture<String>> partitionsfutures = partitions.stream()
@@ -465,9 +251,8 @@ public class PrometheusHttpClient  implements Runnable{
                     .collect(Collectors.toList());
 
 
-
             int partitionn = 0;
-            double totalarrivals=0.0;
+            double totalarrivals = 0.0;
             for (CompletableFuture cf : partitionsfutures) {
                 try {
                     topicpartitions.get(partitionn).setArrivalRate(parseJsonArrivalRate((String) cf.get(), partitionn), false);
@@ -484,9 +269,8 @@ public class PrometheusHttpClient  implements Runnable{
             log.info("totalArrivalRate {}", totalarrivals);
 
 
-
             partitionn = 0;
-            double totallag=0.0;
+            double totallag = 0.0;
             for (CompletableFuture cf : partitionslagfuture) {
                 try {
                     topicpartitions.get(partitionn).setLag(parseJsonArrivalLag((String) cf.get(), partitionn).longValue(), false);
@@ -506,32 +290,41 @@ public class PrometheusHttpClient  implements Runnable{
             Instant end = Instant.now();
             log.info("Duration in seconds to query prometheus for " +
                             "arrival rate and lag and parse result {}",
-                    Duration.between(start,end).toMillis());
+                    Duration.between(start, end).toMillis());
 
 
-            for (int i = 0; i<=4; i++) {
-                log.info("partition {} has the following arrival rate {} and lag {}",  i, topicpartitions.get(i).getArrivalRate(),
-                        topicpartitions.get(i).getLag()) ;
+            for (int i = 0; i <= 4; i++) {
+                log.info("partition {} has the following arrival rate {} and lag {}", i, topicpartitions.get(i).getArrivalRate(),
+                        topicpartitions.get(i).getLag());
             }
 
 
             log.info("calling the scaler");
 
 
-            try {
+           /* try {
                 queryConsumerGroup();
             } catch (ExecutionException | InterruptedException e) {
                 e.printStackTrace();
-            }
+            }*/
+         /*   try {
+                youMightWanttoScaleTrial2();
+            } catch (ExecutionException | InterruptedException e) {
+                e.printStackTrace();
+            }*/
 
-            youMightWanttoScaleUsingBinPack();
+            //youMightWanttoScaleUsingBinPack();
+            //youMightWanttoScaleUsingBinPackHeterogenous();
            /* log.info("calling youmightwanttoscaler (linear), arrivals {}", totalarrivals);
             try {
                 youMightWanttoScale(totalarrivals);
             } catch (ExecutionException | InterruptedException e) {
                 e.printStackTrace();
             }*/
-            log.info("sleeping for 30 s");
+
+            youMightWanttoScaleTrial2();
+
+            log.info("sleeping for 5 s");
             log.info("==================================================");
 
             try {
@@ -539,6 +332,110 @@ public class PrometheusHttpClient  implements Runnable{
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
+        }
+    }
+
+
+
+
+
+
+
+
+
+    public void youMightWanttoScaleTrial2(){
+        log.info("Inside binPackAndScale ");
+        List<Consumer> consumers = new ArrayList<>();
+        int consumerCount = 0;
+        List<Partition> parts = new ArrayList<>(topicpartitions);
+        dynamicAverageMaxConsumptionRate = 95.0;
+
+        LeastLoadedFFD llffd = new LeastLoadedFFD(parts, 100.0);
+        List<Consumer> cons = llffd.LeastLoadFFDHeterogenous();
+
+        log.info("we currently need this consumer");
+        log.info(cons);
+
+
+        for (Consumer co: cons) {
+            currentConsumers.put(co.getCapacity(), currentConsumers.getOrDefault(co.getCapacity() +1 ,1));
+        }
+
+        for (double d : currentConsumers.keySet()) {
+            log.info("current consumer capacity {}, {}", d, currentConsumers.get(d));
+        }
+
+
+        for (double d : currentConsumers.keySet()) {
+            if (currentConsumers.get(d).equals(previousConsumers.get(d))) {
+                log.info("No need to scale consumer of capacity {}", d);
+
+            }
+
+            int factor = currentConsumers.get(d) - previousConsumers.get(d);
+            if (factor > 0) {
+                log.info("we shall up scale consumer of capacity {}, by {}", d, factor);
+            } else if (factor < 0) {
+                log.info("we shall down scale consumer of capacity {}, by {}", d, Math.abs(factor));
+            }
+        }
+
+
+
+
+
+
+
+
+
+        for (double d : capacities) {
+            previousConsumers.put(d, currentConsumers.get(d));
+           currentConsumers.put(d, 0);
+        }
+
+
+
+    }
+
+
+
+
+
+
+
+
+
+
+
+    static      boolean onetime = false;
+    private static void youMightWanttoScaleTrial() throws ExecutionException, InterruptedException {
+        int size = consumerGroupDescriptionMap.get(PrometheusHttpClient.CONSUMER_GROUP).members().size();
+        log.info("curent group size is {}", size);
+
+
+        if (size == 0)
+            return;
+        if (Duration.between(startTime, Instant.now()).toSeconds() <= 60) {
+
+            log.info("Warm up period period has not elapsed yet not taking decisions");
+            return;
+
+        } else {
+            if(!onetime) {
+
+                try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
+                    //k8s.apps().deployments().inNamespace("default").withName("cons1persec").scale(reco);
+                    k8s.apps().statefulSets().inNamespace("default").withName("cons100").scale(0);
+                }
+                onetime = true;
+            }
+
+
+       /* if (Duration.between(lastUpScaleDecision, Instant.now()).toSeconds() >= 30) {
+            log.info("Upscale logic, Up scale cool down has ended");
+
+            scale(totalArrivalRate, size);
+        }*/
         }
     }
 
