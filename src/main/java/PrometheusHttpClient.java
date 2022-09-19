@@ -53,6 +53,11 @@ public class PrometheusHttpClient  implements Runnable {
 
     final static      List<Double> capacities = Arrays.asList(100.0, 150.0);
 
+    public static List<Consumer> newassignment = new ArrayList<>();
+
+
+    public static  Instant warmup = Instant.now();
+
 
     private static void queryConsumerGroup() throws ExecutionException, InterruptedException {
         DescribeConsumerGroupsResult describeConsumerGroupsResult =
@@ -359,6 +364,10 @@ public class PrometheusHttpClient  implements Runnable {
         log.info("we currently need this consumer");
         log.info(cons);
 
+        newassignment.clear();
+
+        newassignment.addAll(cons);
+
 
         for (Consumer co: cons) {
             currentConsumers.put(co.getCapacity(), currentConsumers.getOrDefault(co.getCapacity() +1 ,1));
@@ -401,6 +410,8 @@ public class PrometheusHttpClient  implements Runnable {
 
             int factor = currentConsumers.get(d); /*- previousConsumers.get(d);*/
 
+            scaleByCapacity.put(d, factor);
+
             log.info(" the consumer of capacity {} shall be scaled to {}", d, factor);
 
           /*  if (factor > 0) {
@@ -427,15 +438,21 @@ public class PrometheusHttpClient  implements Runnable {
         for (double d : capacities) {
          //log.info("the statefulset {} shall be scaled", "cons"+(int)d);
 
-         if (scaleUpByCapacity.get(d) != null) {
+         if (scaleByCapacity.get(d) != null) {
              log.info("The statefulset {} shalll be  scaled to {}", "cons"+(int)d, scaleByCapacity.get(d) );
              //log.info(" that is, stateful is scaled by {} ", scaleUpByCapacity.get(d) );
-         }else if (scaleDownByCapacity.get(d) != null) {
-
-             log.info("The statefulset {} shalll be up scaled by {}", "cons"+(int)d, scaleByCapacity.get(d));
 
 
+             if(Duration.between(warmup, Instant.now()).toSeconds() > 30 ) {
 
+                 log.info("cons"+(int)d);
+
+                 try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
+                     //k8s.apps().deployments().inNamespace("default").withName("cons1persec").scale(reco);
+
+                     k8s.apps().statefulSets().inNamespace("default").withName("cons"+(int)d).scale(scaleByCapacity.get(d));
+                 }
+             }
 
 
          }

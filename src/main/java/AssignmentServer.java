@@ -66,7 +66,7 @@ public class AssignmentServer implements Runnable {
         public void getAssignment(AssignmentRequest request, StreamObserver<AssignmentResponse> responseObserver) {
             log.info(request.getRequest());
             //TODO Synchronize access to assignment
-            List<Consumer> assignment = new ArrayList<>();//PrometheusHttpClient.assignment;
+           ;//PrometheusHttpClient.assignment;
             //log.info("The assignment is {}", assignment);
 
 
@@ -84,7 +84,7 @@ public class AssignmentServer implements Runnable {
                 c0.assign(new Partition(2, 0L,0.0d));
                 c0.assign(new Partition(3, 0L,0.0d));
                 c0.assign(new Partition(4, 0L,0.0d));
-                assignment.add(c0);
+                PrometheusHttpClient.newassignment.add(c0);
                 //assignment.add(c1);
                 firsttime = false;
 
@@ -108,6 +108,8 @@ public class AssignmentServer implements Runnable {
 */
 
 
+            } else {
+
             }
 
             // else {
@@ -126,9 +128,11 @@ public class AssignmentServer implements Runnable {
                 assignment.add(c1);
 
             }*/
-            List<ConsumerGrpc> assignmentReply = new ArrayList<>(assignment.size());
 
-            for (Consumer cons : assignment) {
+            List<ConsumerGrpc> assignmentReply = new ArrayList<>(PrometheusHttpClient.newassignment.size());
+
+
+            for (Consumer cons : PrometheusHttpClient.newassignment) {
                 List<PartitionGrpc> pgrpclist = new ArrayList<>();
                 for (Partition p : cons.getAssignedPartitions()) {
                     log.info("partition {} is assigned to consumer {}", p.getId(), cons.getId());
