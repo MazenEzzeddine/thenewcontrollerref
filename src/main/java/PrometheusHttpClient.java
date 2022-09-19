@@ -350,6 +350,9 @@ public class PrometheusHttpClient  implements Runnable {
         List<Partition> parts = new ArrayList<>(topicpartitions);
         dynamicAverageMaxConsumptionRate = 95.0;
 
+
+        Map<Double, Consumer> currentConsumersByName = new HashMap<>();
+
         LeastLoadedFFD llffd = new LeastLoadedFFD(parts, 100.0);
         List<Consumer> cons = llffd.LeastLoadFFDHeterogenous();
 
@@ -359,12 +362,22 @@ public class PrometheusHttpClient  implements Runnable {
 
         for (Consumer co: cons) {
             currentConsumers.put(co.getCapacity(), currentConsumers.getOrDefault(co.getCapacity() +1 ,1));
+            currentConsumersByName.put(co.getCapacity(), co);
         }
+
+
+
 
         for (double d : currentConsumers.keySet()) {
             log.info("current consumer capacity {}, {}", d, currentConsumers.get(d));
         }
 
+  /*      Map<String,List<String>> stsup = new HashMap<>();
+        Map<String,List<String>> stsdown = new HashMap<>();*/
+
+        Map<Double, Integer> scaleUpByCapacity = new HashMap<>();
+        Map<Double, Integer> scaleDownByCapacity = new HashMap<>();
+        Map<Double, Integer> scaleByCapacity = new HashMap<>();
 
         for (double d : currentConsumers.keySet()) {
             if (currentConsumers.get(d).equals(previousConsumers.get(d))) {
@@ -372,26 +385,83 @@ public class PrometheusHttpClient  implements Runnable {
 
             }
 
-            int factor = currentConsumers.get(d) - previousConsumers.get(d);
-            if (factor > 0) {
-                log.info("we shall up scale consumer of capacity {}, by {}", d, factor);
-            } else if (factor < 0) {
-                log.info("we shall down scale consumer of capacity {}, by {}", d, Math.abs(factor));
+            //
+
+
+            int factor2 = currentConsumers.get(d);
+
+            for (int i =0;i<factor2; i++) {
+                currentConsumersByName.get(d).setId("cons"+(int)d+ "-" + i);
             }
+
+
+
+
+
+
+            int factor = currentConsumers.get(d); /*- previousConsumers.get(d);*/
+
+            log.info(" the consumer of capacity {} shall be scaled to {}", d, factor);
+
+          /*  if (factor > 0) {
+                log.info("we shall up scale consumer of capacity {}, by {}", d, factor);
+*//*
+                List<String> consumersup =  new ArrayList<>();
+*//*
+*//*
+                for(int i = previousConsumers.get(d); i< factor; i++) {
+                    consumersup.add(  "cons" + (int)d + "-" + factor);
+                }*//*
+               // stsup.put(String.valueOf(d), consumersup);
+            } *//*else if (factor < 0) {
+                log.info("we shall down scale consumer of capacity {}, by {}", d, Math.abs(factor));
+                scaleDownByCapacity.put(d, Math.abs(factor));
+            }*//**/
         }
 
 
 
+        log.info("current consumers");
+
+
+        for (double d : capacities) {
+         //log.info("the statefulset {} shall be scaled", "cons"+(int)d);
+
+         if (scaleUpByCapacity.get(d) != null) {
+             log.info("The statefulset {} shalll be  scaled to {}", "cons"+(int)d, scaleByCapacity.get(d) );
+             //log.info(" that is, stateful is scaled by {} ", scaleUpByCapacity.get(d) );
+         }else if (scaleDownByCapacity.get(d) != null) {
+
+             log.info("The statefulset {} shalll be up scaled by {}", "cons"+(int)d, scaleByCapacity.get(d));
 
 
 
+
+
+         }
+
+        }
 
 
 
         for (double d : capacities) {
+            log.info(currentConsumersByName.get(d));
+
             previousConsumers.put(d, currentConsumers.get(d));
-           currentConsumers.put(d, 0);
+            currentConsumers.put(d, 0);
         }
+
+
+
+
+
+      /*  try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
+            k8s.apps().statefulSets().inNamespace("default").withName()
+                    deployments().inNamespace("default").withName("cons1persec").scale(reco);
+
+        }*/
+
+
 
 
 

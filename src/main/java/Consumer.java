@@ -80,7 +80,15 @@ public class Consumer  implements  Comparable{
         return assignedPartitions;
     }*/
 
+    public void setId(String id) {
+        this.id = id;
+    }
 
+    public String getId() {
+        return id;
+    }
+
+    private String id;
     private final double capacity;
     private double remainingCapacity;
     private  ArrayList<Partition> partitions;
@@ -127,8 +135,9 @@ public class Consumer  implements  Comparable{
 
     @Override
     public String toString() {
-        return "Bin{" +
-                "capacity=" + capacity +
+        return "Consumer{" +
+                "Id=" + id +
+                ", capacity=" + capacity +
                 ", remainingCapacity=" + remainingCapacity +
                 ", partitions=" + partitions +
                 '}';
