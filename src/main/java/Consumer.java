@@ -107,7 +107,7 @@ public class Consumer  implements  Comparable{
         this.remainingCapacity = capacity;
     }
 
-    public ArrayList<Partition> getItems() {
+    public ArrayList<Partition> getAssignedPartitions() {
         return partitions;
     }
 

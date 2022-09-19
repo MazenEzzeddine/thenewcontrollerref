@@ -75,18 +75,18 @@ public class AssignmentServer implements Runnable {
             if (firsttime) {
 
 
-             /*  Consumer c0 = new Consumer("cons100-0",500L,100);
-                Consumer c1 = new Consumer("cons200-0",500L,100);
+               Consumer c0 = new Consumer(100.0);
+               c0.setId("cons100-0");
+                //Consumer c1 = new Consumer("cons200-0",500L,100);
 
-                c0.assignPartition(new Partition(0, 0L,0.0d));
-                c0.assignPartition(new Partition(1, 0L,0.0d));
-                c1.assignPartition(new Partition(2, 0L,0.0d));
-                c1.assignPartition(new Partition(3, 0L,0.0d));
-                c1.assignPartition(new Partition(4, 0L,0.0d));
+                c0.assign(new Partition(0, 0L,0.0d));
+                c0.assign(new Partition(1, 0L,0.0d));
+                c0.assign(new Partition(2, 0L,0.0d));
+                c0.assign(new Partition(3, 0L,0.0d));
+                c0.assign(new Partition(4, 0L,0.0d));
                 assignment.add(c0);
-                assignment.add(c1);
+                //assignment.add(c1);
                 firsttime = false;
-*/
 
              /*   Consumer c0 = new Consumer("0",500L,100);
                 Consumer c1 = new Consumer("1",500L,100);
@@ -125,7 +125,7 @@ public class AssignmentServer implements Runnable {
                 //assignment.add(c0);
                 assignment.add(c1);
 
-            }
+            }*/
             List<ConsumerGrpc> assignmentReply = new ArrayList<>(assignment.size());
 
             for (Consumer cons : assignment) {
