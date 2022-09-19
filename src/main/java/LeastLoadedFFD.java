@@ -61,11 +61,12 @@ public class LeastLoadedFFD {
     }
 
     public List<Consumer> LeastLoadFFDHeterogenous(){
-        List<Double> capacities = Arrays.asList(100.0, 150.0);
+        List<Double> capacities = Arrays.asList(95.0, 190.0);
         int capacityIndex = 0;
         List<Consumer> bins = new ArrayList<>();
         Collections.sort(items, Collections.reverseOrder());
         Consumer bin = new Consumer(bincapacity);
+        //bin.setId("cons" + (int)bin.getCapacity());
         bins.add(bin);
         capacityIndex = 1;
         Consumer newbin = null;
@@ -86,9 +87,12 @@ public class LeastLoadedFFD {
                     if (b == bins.get(bins.size() - 1)) {
                         if(capacityIndex < capacities.size()) {
                             newbin = new Consumer(capacities.get(capacityIndex));
+                           // newbin.setId("cons" + (int)bin.getCapacity());
+
                         } else {
                             capacityIndex=0;
                             newbin = new Consumer(capacities.get(capacityIndex));
+                           // newbin.setId("cons" + (int)bin.getCapacity());
                         }
                     }
                 }

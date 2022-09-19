@@ -66,17 +66,16 @@ public class AssignmentServer implements Runnable {
         public void getAssignment(AssignmentRequest request, StreamObserver<AssignmentResponse> responseObserver) {
             log.info(request.getRequest());
             //TODO Synchronize access to assignment
-           ;//PrometheusHttpClient.assignment;
-            //log.info("The assignment is {}", assignment);
 
-
-            //if(assignment.size() == 0) {
 
             if (firsttime) {
 
 
-               Consumer c0 = new Consumer(100.0);
-               c0.setId("cons100-0");
+                List<Consumer> assignment = new ArrayList<>();
+
+
+               Consumer c0 = new Consumer(95);
+               c0.setId("cons95-0");
                 //Consumer c1 = new Consumer("cons200-0",500L,100);
 
                 c0.assign(new Partition(0, 0L,0.0d));
@@ -84,68 +83,57 @@ public class AssignmentServer implements Runnable {
                 c0.assign(new Partition(2, 0L,0.0d));
                 c0.assign(new Partition(3, 0L,0.0d));
                 c0.assign(new Partition(4, 0L,0.0d));
-                PrometheusHttpClient.newassignment.add(c0);
+                assignment.add(c0);
                 //assignment.add(c1);
                 firsttime = false;
 
-             /*   Consumer c0 = new Consumer("0",500L,100);
-                Consumer c1 = new Consumer("1",500L,100);
-                Consumer c2 = new Consumer("2",500L,100);
-                Consumer c3 = new Consumer("3",500L,100);
-                Consumer c4 = new Consumer("4",500L,100);
-                c0.assignPartition(new Partition(0, 0L,0.0d));
-                c1.assignPartition(new Partition(1, 0L,0.0d));
-                c2.assignPartition(new Partition(2, 0L,0.0d));
-                c3.assignPartition(new Partition(3, 0L,0.0d));
-                c4.assignPartition(new Partition(4, 0L,0.0d));
+
+                List<ConsumerGrpc> assignmentReply = new ArrayList<>(assignment.size());
 
 
-                assignment.add(c0);
-                assignment.add(c1);
-                assignment.add(c2);
-                assignment.add(c3);
-                assignment.add(c4);
-*/
+                for (Consumer cons : assignment) {
+                    List<PartitionGrpc> pgrpclist = new ArrayList<>();
+                    for (Partition p : cons.getAssignedPartitions()) {
+                        log.info("partition {} is assigned to consumer {}", p.getId(), cons.getId());
+                        PartitionGrpc pgrpc =  PartitionGrpc.newBuilder().setId(p.getId()).build();
+                        pgrpclist.add(pgrpc);
+                    }
+                    ConsumerGrpc consg  =  ConsumerGrpc.newBuilder().setId(cons.getId()).addAllAssignedPartitions(pgrpclist).build();
+                    assignmentReply.add(consg);
+                }
+
+                responseObserver.onNext(AssignmentResponse.newBuilder().addAllConsumers(assignmentReply).build());
+                responseObserver.onCompleted();
+                log.info("Sent Assignment to client");
+
+
 
 
             } else {
 
-            }
 
-            // else {
-            //assignment.clear();
+                List<ConsumerGrpc> assignmentReply = new ArrayList<>(PrometheusHttpClient.newassignment.size());
 
 
-            //Consumer c0 = new Consumer("cons100-0",500L,100);
-               /* Consumer c1 = new Consumer("cons200-0",500L,100);
-
-                c1.assignPartition(new Partition(0, 0L,0.0d));
-                c1.assignPartition(new Partition(1, 0L,0.0d));
-                c1.assignPartition(new Partition(2, 0L,0.0d));
-                c1.assignPartition(new Partition(3, 0L,0.0d));
-                c1.assignPartition(new Partition(4, 0L,0.0d));
-                //assignment.add(c0);
-                assignment.add(c1);
-
-            }*/
-
-            List<ConsumerGrpc> assignmentReply = new ArrayList<>(PrometheusHttpClient.newassignment.size());
-
-
-            for (Consumer cons : PrometheusHttpClient.newassignment) {
-                List<PartitionGrpc> pgrpclist = new ArrayList<>();
-                for (Partition p : cons.getAssignedPartitions()) {
-                    log.info("partition {} is assigned to consumer {}", p.getId(), cons.getId());
-                   PartitionGrpc pgrpc =  PartitionGrpc.newBuilder().setId(p.getId()).build();
-                   pgrpclist.add(pgrpc);
+                for (Consumer cons : PrometheusHttpClient.newassignment) {
+                    List<PartitionGrpc> pgrpclist = new ArrayList<>();
+                    for (Partition p : cons.getAssignedPartitions()) {
+                        log.info("partition {} is assigned to consumer {}", p.getId(), cons.getId());
+                        PartitionGrpc pgrpc =  PartitionGrpc.newBuilder().setId(p.getId()).build();
+                        pgrpclist.add(pgrpc);
+                    }
+                    ConsumerGrpc consg  =  ConsumerGrpc.newBuilder().setId(cons.getId()).addAllAssignedPartitions(pgrpclist).build();
+                    assignmentReply.add(consg);
                 }
-                ConsumerGrpc consg  =  ConsumerGrpc.newBuilder().setId(cons.getId()).addAllAssignedPartitions(pgrpclist).build();
-                assignmentReply.add(consg);
+
+                responseObserver.onNext(AssignmentResponse.newBuilder().addAllConsumers(assignmentReply).build());
+                responseObserver.onCompleted();
+                log.info("Sent Assignment to client");
+
             }
 
-            responseObserver.onNext(AssignmentResponse.newBuilder().addAllConsumers(assignmentReply).build());
-            responseObserver.onCompleted();
-            log.info("Sent Assignment to client");
+
+
             //PrometheusHttpClient.joiningTime = Duration.between(PrometheusHttpClient.lastScaleTime, Instant.now()).getSeconds();
             //log.info("joiningTime {}", PrometheusHttpClient.joiningTime);*/
             // }

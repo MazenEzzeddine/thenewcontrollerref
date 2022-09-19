@@ -51,7 +51,7 @@ public class PrometheusHttpClient  implements Runnable {
 
     static Map<Double, Integer> currentConsumers =  new HashMap<>();
 
-    final static      List<Double> capacities = Arrays.asList(100.0, 150.0);
+    final static      List<Double> capacities = Arrays.asList(95.0, 190.0);
 
     public static List<Consumer> newassignment = new ArrayList<>();
 
@@ -327,7 +327,7 @@ public class PrometheusHttpClient  implements Runnable {
                 e.printStackTrace();
             }*/
 
-            youMightWanttoScaleTrial2();
+           youMightWanttoScaleTrial2();
 
             log.info("sleeping for 5 s");
             log.info("==================================================");
@@ -358,7 +358,7 @@ public class PrometheusHttpClient  implements Runnable {
 
         Map<Double, Consumer> currentConsumersByName = new HashMap<>();
 
-        LeastLoadedFFD llffd = new LeastLoadedFFD(parts, 100.0);
+        LeastLoadedFFD llffd = new LeastLoadedFFD(parts, 95.0);
         List<Consumer> cons = llffd.LeastLoadFFDHeterogenous();
 
         log.info("we currently need this consumer");
@@ -381,11 +381,9 @@ public class PrometheusHttpClient  implements Runnable {
             log.info("current consumer capacity {}, {}", d, currentConsumers.get(d));
         }
 
-  /*      Map<String,List<String>> stsup = new HashMap<>();
-        Map<String,List<String>> stsdown = new HashMap<>();*/
 
-        Map<Double, Integer> scaleUpByCapacity = new HashMap<>();
-        Map<Double, Integer> scaleDownByCapacity = new HashMap<>();
+
+
         Map<Double, Integer> scaleByCapacity = new HashMap<>();
 
         for (double d : currentConsumers.keySet()) {
@@ -419,7 +417,7 @@ public class PrometheusHttpClient  implements Runnable {
 *//*
                 List<String> consumersup =  new ArrayList<>();
 *//*
-*//*
+             *//*
                 for(int i = previousConsumers.get(d); i< factor; i++) {
                     consumersup.add(  "cons" + (int)d + "-" + factor);
                 }*//*
@@ -436,26 +434,26 @@ public class PrometheusHttpClient  implements Runnable {
 
 
         for (double d : capacities) {
-         //log.info("the statefulset {} shall be scaled", "cons"+(int)d);
+            //log.info("the statefulset {} shall be scaled", "cons"+(int)d);
 
-         if (scaleByCapacity.get(d) != null) {
-             log.info("The statefulset {} shalll be  scaled to {}", "cons"+(int)d, scaleByCapacity.get(d) );
-             //log.info(" that is, stateful is scaled by {} ", scaleUpByCapacity.get(d) );
-
-
-             if(Duration.between(warmup, Instant.now()).toSeconds() > 30 ) {
-
-                 log.info("cons"+(int)d);
-
-                 try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
-                     //k8s.apps().deployments().inNamespace("default").withName("cons1persec").scale(reco);
-
-                     k8s.apps().statefulSets().inNamespace("default").withName("cons"+(int)d).scale(scaleByCapacity.get(d));
-                 }
-             }
+            if (scaleByCapacity.get(d) != null) {
+                log.info("The statefulset {} shalll be  scaled to {}", "cons"+(int)d, scaleByCapacity.get(d) );
+                //log.info(" that is, stateful is scaled by {} ", scaleUpByCapacity.get(d) );
 
 
-         }
+                if(Duration.between(warmup, Instant.now()).toSeconds() > 30 ) {
+
+                    log.info("cons"+(int)d);
+
+                    try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
+                        //k8s.apps().deployments().inNamespace("default").withName("cons1persec").scale(reco);
+
+                        k8s.apps().statefulSets().inNamespace("default").withName("cons"+(int)d).scale(scaleByCapacity.get(d));
+                    }
+                }
+
+
+            }
 
         }
 
@@ -475,7 +473,6 @@ public class PrometheusHttpClient  implements Runnable {
       /*  try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
             k8s.apps().statefulSets().inNamespace("default").withName()
                     deployments().inNamespace("default").withName("cons1persec").scale(reco);
-
         }*/
 
 
@@ -483,6 +480,8 @@ public class PrometheusHttpClient  implements Runnable {
 
 
     }
+
+
 
 
 
