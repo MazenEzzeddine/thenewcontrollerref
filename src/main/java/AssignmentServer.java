@@ -74,17 +74,21 @@ public class AssignmentServer implements Runnable {
                 List<Consumer> assignment = new ArrayList<>();
 
 
-               Consumer c0 = new Consumer(95);
-               c0.setId("cons95-0");
+                Consumer c0 = new Consumer(250);
+                Consumer c1 = new Consumer(250);
+
+                c0.setId("cons240-0");
+                c1.setId("cons240-1");
+
                 //Consumer c1 = new Consumer("cons200-0",500L,100);
 
                 c0.assign(new Partition(0, 0L,0.0d));
                 c0.assign(new Partition(1, 0L,0.0d));
                 c0.assign(new Partition(2, 0L,0.0d));
-                c0.assign(new Partition(3, 0L,0.0d));
-                c0.assign(new Partition(4, 0L,0.0d));
+                c1.assign(new Partition(3, 0L,0.0d));
+                c1.assign(new Partition(4, 0L,0.0d));
                 assignment.add(c0);
-                //assignment.add(c1);
+                assignment.add(c1);
                 firsttime = false;
 
 

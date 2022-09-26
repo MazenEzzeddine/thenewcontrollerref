@@ -148,5 +148,12 @@ public class Consumer  implements  Comparable{
         return Double.compare(remainingCapacity , ((Consumer)o).remainingCapacity);
     }
 
+/*
+    @Override
+    public int compareTo(Object o) {
+        return Integer.compare(partitions.size(), ((Consumer) o).partitions.size());
+    }
+*/
+
 
 }

@@ -2,11 +2,10 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import io.fabric8.kubernetes.client.DefaultKubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClient;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.ConsumerGroupDescription;
-import org.apache.kafka.clients.admin.DescribeConsumerGroupsResult;
+import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.TopicPartitionInfo;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -21,6 +20,12 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
+
+
+/////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////
 
 
 public class PrometheusHttpClient  implements Runnable {
@@ -51,12 +56,24 @@ public class PrometheusHttpClient  implements Runnable {
 
     static Map<Double, Integer> currentConsumers =  new HashMap<>();
 
-    final static      List<Double> capacities = Arrays.asList(95.0, 190.0);
-
+    final static      List<Double> capacities = Arrays.asList(95.0, 240.0);
     public static List<Consumer> newassignment = new ArrayList<>();
 
 
     public static  Instant warmup = Instant.now();
+
+
+    static Instant lastScaletime;
+
+
+
+    ////////////////////////////////////////////////////////////////////////
+    static TopicDescription td;
+    static DescribeTopicsResult tdr;
+    static ArrayList<Partition> partitions = new ArrayList<>();
+
+
+    ////////////////////////////////////////////////////////////////////////
 
 
     private static void queryConsumerGroup() throws ExecutionException, InterruptedException {
@@ -131,6 +148,11 @@ public class PrometheusHttpClient  implements Runnable {
         startTime = Instant.now();
         log.info("Sleeping for 1.5 minutes to warmup");
         HttpClient client = HttpClient.newHttpClient();
+
+
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
         String all3 = "http://prometheus-operated:9090/api/v1/query?" +
                 "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,namespace=%22default%22%7D%5B1m%5D))%20by%20(topic)";
         String p0 = "http://prometheus-operated:9090/api/v1/query?" +
@@ -143,6 +165,34 @@ public class PrometheusHttpClient  implements Runnable {
                 "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,partition=%223%22,namespace=%22default%22%7D%5B1m%5D))";
         String p4 = "http://prometheus-operated:9090/api/v1/query?" +
                 "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,partition=%224%22,namespace=%22default%22%7D%5B1m%5D))";
+
+
+        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+       /* String all3 = "http://prometheus-operated:9090/api/v1/query?" +
+                "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,namespace=%22default%22%7D%5B5s%5D))%20by%20(topic)";
+        String p0 = "http://prometheus-operated:9090/api/v1/query?" +
+                "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,partition=%220%22,namespace=%22default%22%7D%5B5s%5D))";
+        String p1 = "http://prometheus-operated:9090/api/v1/query?" +
+                "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,partition=%221%22,namespace=%22default%22%7D%5B5s%5D))";
+        String p2 = "http://prometheus-operated:9090/api/v1/query?" +
+                "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,partition=%222%22,namespace=%22default%22%7D%5B5s%5D))";
+        String p3 = "http://prometheus-operated:9090/api/v1/query?" +
+                "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,partition=%223%22,namespace=%22default%22%7D%5B5s%5D))";
+        String p4 = "http://prometheus-operated:9090/api/v1/query?" +
+                "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic1%22,partition=%224%22,namespace=%22default%22%7D%5B5s%5D))";*/
+
+
+
+
+
+
+
+
+
+
+        /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
        /* String p5 =   "http://prometheus-operated:9090/api/v1/query?" +
                 "query=sum(rate(kafka_topic_partition_current_offset%7Btopic=%22testtopic2%22,partition=%225%22,namespace=%22default%22%7D%5B1m%5D))";
         String p6 =   "http://prometheus-operated:9090/api/v1/query?" +
@@ -234,6 +284,21 @@ public class PrometheusHttpClient  implements Runnable {
             topicpartitions.add(new Partition(i, 0, 0));
         }
         // log.info("created the 5 partitions");
+
+
+
+        log.info("Thread.sleep(140*1000)");
+
+        try {
+            //Initial delay so that the producer has started.
+            lastScaletime = Instant.now();
+            Thread.sleep(140*1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+
+
 
         while (true) {
             Instant start = Instant.now();
@@ -327,7 +392,11 @@ public class PrometheusHttpClient  implements Runnable {
                 e.printStackTrace();
             }*/
 
-           youMightWanttoScaleTrial2();
+
+
+            if (Duration.between(lastScaletime, Instant.now()).getSeconds()> 30)
+                youMightWanttoScaleTrial2();
+
 
             log.info("sleeping for 5 s");
             log.info("==================================================");
@@ -348,138 +417,129 @@ public class PrometheusHttpClient  implements Runnable {
 
 
 
-    public void youMightWanttoScaleTrial2(){
+    public static void  youMightWanttoScaleTrial2(){
+
         log.info("Inside binPackAndScale ");
         List<Consumer> consumers = new ArrayList<>();
         int consumerCount = 0;
         List<Partition> parts = new ArrayList<>(topicpartitions);
-        dynamicAverageMaxConsumptionRate = 95.0;
+        Map<Double, List<Consumer>> currentConsumersByName = new HashMap<>();
+    /*   LeastLoadedFFD llffd = new LeastLoadedFFD(parts, 95.0);
+        List<Consumer> cons = llffd.LeastLoadFFDHeterogenous();*/
+
+        FirstFitDecHetero hetero = new FirstFitDecHetero(parts, capacities);
+        List<Consumer> cons = hetero.fftFFDHetero();
 
 
-        Map<Double, Consumer> currentConsumersByName = new HashMap<>();
+        for(double c : capacities) {
+            currentConsumersByName.putIfAbsent(c, new ArrayList<>());
 
-        LeastLoadedFFD llffd = new LeastLoadedFFD(parts, 95.0);
-        List<Consumer> cons = llffd.LeastLoadFFDHeterogenous();
-
-        log.info("we currently need this consumer");
-        log.info(cons);
-
-        newassignment.clear();
-
-        newassignment.addAll(cons);
-
-
-        for (Consumer co: cons) {
-            currentConsumers.put(co.getCapacity(), currentConsumers.getOrDefault(co.getCapacity() +1 ,1));
-            currentConsumersByName.put(co.getCapacity(), co);
         }
 
 
+        log.info("we currently need this consumer");
+        log.info(cons);
+        newassignment.clear();
 
+        for (Consumer co: cons) {
+            log.info(co.getCapacity());
+            currentConsumers.put(co.getCapacity(), currentConsumers.get(co.getCapacity()) +1);
+            currentConsumersByName.get(co.getCapacity()).add(co);
+            // currentConsumersByName.put(co.getCapacity(), co);
+        }
 
         for (double d : currentConsumers.keySet()) {
             log.info("current consumer capacity {}, {}", d, currentConsumers.get(d));
         }
 
-
-
-
         Map<Double, Integer> scaleByCapacity = new HashMap<>();
+        Map<Double, Integer>  diffByCapacity = new HashMap<>();
 
         for (double d : currentConsumers.keySet()) {
             if (currentConsumers.get(d).equals(previousConsumers.get(d))) {
                 log.info("No need to scale consumer of capacity {}", d);
-
-            }
-
-            //
-
-
-            int factor2 = currentConsumers.get(d);
-
-            for (int i =0;i<factor2; i++) {
-                currentConsumersByName.get(d).setId("cons"+(int)d+ "-" + i);
             }
 
 
-
+            int index=0;
+            for (Consumer c:  currentConsumersByName.get(d)) {
+                c.setId("cons"+(int)d+ "-" + index);
+                index++;
+                log.info(c.getId());
+            }
 
 
 
             int factor = currentConsumers.get(d); /*- previousConsumers.get(d);*/
+            int  diff = currentConsumers.get(d) - previousConsumers.get(d);
+            log.info("diff {} for capacity {}", diff, d);
+            diffByCapacity.put(d, diff);
 
             scaleByCapacity.put(d, factor);
-
             log.info(" the consumer of capacity {} shall be scaled to {}", d, factor);
-
-          /*  if (factor > 0) {
-                log.info("we shall up scale consumer of capacity {}, by {}", d, factor);
-*//*
-                List<String> consumersup =  new ArrayList<>();
-*//*
-             *//*
-                for(int i = previousConsumers.get(d); i< factor; i++) {
-                    consumersup.add(  "cons" + (int)d + "-" + factor);
-                }*//*
-               // stsup.put(String.valueOf(d), consumersup);
-            } *//*else if (factor < 0) {
-                log.info("we shall down scale consumer of capacity {}, by {}", d, Math.abs(factor));
-                scaleDownByCapacity.put(d, Math.abs(factor));
-            }*//**/
         }
 
+        newassignment.addAll(cons);
 
 
-        log.info("current consumers");
 
 
-        for (double d : capacities) {
-            //log.info("the statefulset {} shall be scaled", "cons"+(int)d);
-
-            if (scaleByCapacity.get(d) != null) {
-                log.info("The statefulset {} shalll be  scaled to {}", "cons"+(int)d, scaleByCapacity.get(d) );
-                //log.info(" that is, stateful is scaled by {} ", scaleUpByCapacity.get(d) );
 
 
+
+       /* for (double d : capacities) {
+            if (scaleByCapacity.get(d) != null && diffByCapacity.get(d)!=0) {
+                log.info("The statefulset {} shall be  scaled to {}", "cons"+(int)d, scaleByCapacity.get(d) );
                 if(Duration.between(warmup, Instant.now()).toSeconds() > 30 ) {
-
                     log.info("cons"+(int)d);
 
-                    try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
-                        //k8s.apps().deployments().inNamespace("default").withName("cons1persec").scale(reco);
-
+                    new Thread(()-> { try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
                         k8s.apps().statefulSets().inNamespace("default").withName("cons"+(int)d).scale(scaleByCapacity.get(d));
-                    }
+                    }}).start();
+                    lastScaletime = Instant.now();
                 }
-
-
             }
+        }
+*/
 
+        for (double d : capacities) {
+            if (scaleByCapacity.get(d) != null && diffByCapacity.get(d) > 0) {
+                log.info("The statefulset {} shall be  scaled to {}", "cons"+(int)d, scaleByCapacity.get(d) );
+                if(Duration.between(warmup, Instant.now()).toSeconds() > 30 ) {
+                    log.info("cons"+(int)d);
+
+                    /* new Thread(()-> {*/ try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
+                        k8s.apps().statefulSets().inNamespace("default").withName("cons"+(int)d).scale(scaleByCapacity.get(d));
+                    }}/*).start();*/
+                lastScaletime = Instant.now();
+            }
         }
 
 
 
         for (double d : capacities) {
-            log.info(currentConsumersByName.get(d));
+            if (scaleByCapacity.get(d) != null && diffByCapacity.get(d) < 0) {
+                log.info("The statefulset {} shall be  scaled to {}", "cons"+(int)d, scaleByCapacity.get(d) );
+                if(Duration.between(warmup, Instant.now()).toSeconds() > 30 ) {
+                    log.info("cons"+(int)d);
+
+                    /* new Thread(()-> {*/ try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
+                        k8s.apps().statefulSets().inNamespace("default").withName("cons"+(int)d).scale(scaleByCapacity.get(d));
+                    }}/*).start();*/
+                lastScaletime = Instant.now();
+            }
+        }
+
+
+        for (double d : capacities) {
 
             previousConsumers.put(d, currentConsumers.get(d));
             currentConsumers.put(d, 0);
         }
 
-
-
-
-
-      /*  try (final KubernetesClient k8s = new DefaultKubernetesClient()) {
-            k8s.apps().statefulSets().inNamespace("default").withName()
-                    deployments().inNamespace("default").withName("cons1persec").scale(reco);
-        }*/
-
-
-
-
-
     }
+
+
 
 
 
@@ -566,4 +626,8 @@ public class PrometheusHttpClient  implements Runnable {
 
         log.info("S(int) Math.ceil(totalArrivalRate / poll) {}  ", reco );
     }
+
+
+
+
 }
