@@ -5,6 +5,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,6 +15,8 @@ public class AssignmentServer implements Runnable {
     private final int port;
     private final Server server;
     private static final Logger log = LogManager.getLogger(AssignmentServer.class);
+
+
 
     public AssignmentServer(int port) throws IOException {
         this(ServerBuilder.forPort(port), port);
@@ -68,10 +72,12 @@ public class AssignmentServer implements Runnable {
             //TODO Synchronize access to assignment
 
 
-            if (firsttime) {
+     /*       if (firsttime) {*/
+
+            if (Duration.between(PrometheusHttpClient.warmup, Instant.now()).toSeconds() < 60 ){
 
 
-                List<Consumer> assignment = new ArrayList<>();
+            List<Consumer> assignment = new ArrayList<>();
 
 
                 Consumer c0 = new Consumer(250);
